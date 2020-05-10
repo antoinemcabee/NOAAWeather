@@ -1,0 +1,486 @@
+---
+title: "Written Report of the NOAA dataset"
+author: "Antoine McAbee and Chase Brown"
+date: "5/6/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include = FALSE}
+library('fields')
+library('viridis')
+library('maps')
+library('ggplot2')
+library("fields")
+library("tidyverse")
+library("lubridate")
+library("sf")
+library("tidymodels")
+```
+
+### Abstract: 
+
+When working with the NOAA dataset, our main goal was to explain the differences in Ice Pellets and Freezing Rain, specifically in the states Oregon, Virginia, Texas, North Dakota, and Kansas. We planned to create a visual plot of the number of observations for each of the five states, in order to draw conclusions on which states had more or less Ice Pellets and Freezing Rain. One major finding we found was that Virginia had more occurrences of Ice Pellets on average than the other states. Another finding we found was that Kansas had more occurrences of Freezing Rain on average than the other states. Our last goal was to use a random forest classifier to predict precipitation type, specifically Freezing Rain and Ice Pellets. Our finding for the classifier was very accurate in predicting precipitation type. 
+
+### Introduction: 
+
+For our project, we found the NOAA Weather dataset very interesting but we also had questions concerning the data. The data was gathered over a thirteen year period from the year 1996 to 2013. Prior to our research, we were able to narrow our inquiry to that concerning the states of  Oregon, Virginia, Texas, North Dakota, and Kansas. We chose these states because they represent varying geographical positions within the United States and we believed that we would see many differences in onset of ice pellets and freezing rain within these regions. Virginia and Oregon were specifically chosen because of their coastal position and associative latitude. We found Texas and North Dakota to be desirable because of their north and south positions within the United States. Finally, Kansas is located, almost, directly in the middle of the country and experiences many varying precipitation types. 
+
+The dataset we analyzed contained four different precipitation types: rain, snow, freezing rain, and ice pellets. For the purpose of this project, we will be focusing on the freezing rain and ice pellets. The NOAA dataset also contains location data, latitudes and longitudes, date and time data, a vertical temperature profile (VTP) (or atmospheric temperature from ground level to 3000 meters within the atmosphere) for each data entry, and the dataset contains a listing of stations. The stations are the locations where the data was recorded. We used the common statistical programming language, R, to interact with the data and perform an analysis.
+
+### Methods: 
+
+Before we could begin the analysis of the data, we needed to understand the location data that was collected, i.e. the states that correspond with the stations variable in the dataset. To do this, we utilized the latitude and longitude data collected and compared it with well known and established location data from a third-party R package. We then parsed this newly created data for the five states that we were looking to research to minimize the size of our computations. We then plotted these locations on a map of the United States for geographical comparison (as seen below in Figure 1).
+```{r, include = FALSE}
+load("predictors.rdata")
+```
+
+```{r, include = FALSE}
+data_temp <- tibble(
+         temp = c(Twb.prof),
+         depth = rep(seq(0, 3000, by = 100), length.out = length(temp)),
+         prec = rep(ptype, each = 31),
+         station = rep(stations[station.ind], each = 31),
+         lat = rep(lat[station.ind], each = 31),
+         lon = rep(lon[station.ind] - 360, each = 31),
+         date = rep(dates[date.ind], each = 31)
+)
+
+data_notemp <- tibble(
+         prec = ptype, # get a noice tibble
+         station = stations[station.ind],
+         lat = lat[station.ind],
+         lon = lon[station.ind] - 360,
+         date = dates[date.ind]
+)
+
+locations <- tibble(
+        station = stations[unique(station.ind)],
+        lat = lat[unique(station.ind)],
+        lon = lon[unique(station.ind)] - 360
+)
+```
+ 
+```{r, include = FALSE}
+US <- st_as_sf(maps::map("state", plot = FALSE, fill = TRUE)) # states sf obj
+
+coords <- locations %>% # make observed coords an sf obj
+  select(lat, lon) %>% # just lat and long
+  st_as_sf(coords = c("lon", "lat"), crs = st_crs(US)) %>% 
+  st_join(US)
+
+# create new column based on state and drop na values
+stateData <- bind_cols(locations, state = as.character(coords$ID)) %>% 
+  drop_na(state)
+
+```
+
+```{r, include = FALSE}
+oregon <- stateData[which(stateData$state == "oregon"), ]
+virginia <- stateData[which(stateData$state == "virginia"), ]
+texas <- stateData[which(stateData$state == "texas"), ]
+kansas <- stateData[which(stateData$state == "kansas"), ]
+northDakota <- stateData[which(stateData$state == "north dakota"), ]
+```
+
+\newpage
+
+We then computed the total number of precipitation events (ice pellets and freezing rain only) per station and assigned the states to those stations to determine the total number of these precipitation events per state per year. This data spans the entirety of the dataset, being from 1996 through 2013 (as seen below in Figure 2).
+
+\ 
+\ 
+\ 
+
+```{r, echo = FALSE, message=FALSE, fig.width=9, fig.height=5, warning = FALSE}
+
+us <- map_data("state")
+# plot oregon and virginia on a full us map
+locations %>% 
+  ggplot() +
+  theme_dark() + # must use dark theme to see values on the border
+  geom_map(data=us, map=us, aes(long, lat, map_id=region),color='black') + 
+  geom_point(data=oregon, aes(x=lon, y=lat), color="white") +
+  geom_point(data=virginia, aes(x=lon, y=lat), color="white") +
+  geom_point(data=texas, aes(x=lon, y=lat), color="white") +
+  geom_point(data=kansas, aes(x=lon, y=lat), color="white") +
+  geom_point(data=northDakota, aes(x=lon, y=lat), color="white") +
+  labs (
+    x='Latitude',
+    y='Longitude',
+    title='US Stations by State'
+  )
+
+```
+
+
+```{r, include = FALSE, message=FALSE}
+# for png purposes only
+png(file = "Figure1.png", height = 860, width = 1500)
+
+locations %>% 
+  ggplot() +
+  theme_dark() + # must use dark theme to see values on the border
+  geom_map(data=us, map=us, aes(long, lat, map_id=region),color='black') + 
+  geom_point(data=oregon, aes(x=lon, y=lat), color="white") +
+  geom_point(data=virginia, aes(x=lon, y=lat), color="white") +
+  geom_point(data=texas, aes(x=lon, y=lat), color="white") +
+  geom_point(data=kansas, aes(x=lon, y=lat), color="white") +
+  geom_point(data=northDakota, aes(x=lon, y=lat), color="white") +
+  labs (
+    x='Latitude',
+    y='Longitude',
+    title='US Stations by State'
+  )
+
+
+dev.off()
+```
+
+\  
+\  
+\  
+
+Next, computed the total number of precipitation events (ice pellets and freezing rain only) per station and assigned the states to those stations to determine the total number of these precipitation events per state per year. This data spans the entirety of the dataset, being from 1996 through 2013 (as seen below in Figure 2).
+
+\  
+\  
+\  
+\  
+
+```{r, include = FALSE}
+oregonPrecip <- data_temp[which(data_temp$station == oregon$station), ] %>%
+  filter(prec ==  "FZRA" | prec ==  "IP") %>%
+  mutate(date = ymd(substr(date, 1, 8))) %>% 
+  mutate(state = "oregon")
+
+virginiaPrecip <- data_temp[which(data_temp$station == virginia$station), ] %>%
+  filter(prec == "FZRA" | prec ==  "IP") %>%
+  mutate(date = ymd(substr(date, 1, 8))) %>% 
+  mutate(state = "virginia")
+
+texasPrecip <-data_temp[which(data_temp$station == texas$station), ] %>%
+  filter(prec == "FZRA" | prec ==  "IP") %>%
+  mutate(date = ymd(substr(date, 1, 8))) %>% 
+  mutate(state = "texas")
+
+kansasPrecip <-data_temp[which(data_temp$station == kansas$station), ] %>%
+  filter(prec == "FZRA" | prec ==  "IP") %>%
+  mutate(date = ymd(substr(date, 1, 8))) %>% 
+  mutate(state = "kansas")
+
+nDakotaPrecip <-data_temp[which(data_temp$station == northDakota$station), ] %>%
+  filter(prec == "FZRA" | prec ==  "IP") %>%
+  mutate(date = ymd(substr(date, 1, 8))) %>% 
+  mutate(state = "north dakota")
+
+```
+
+```{r, include = FALSE}
+oregonFRCount <- oregonPrecip %>% 
+  filter(prec == "FZRA") %>%
+  count(year(date)) %>% 
+  mutate(state = 'oregon', prec = 'FZRA') %>% 
+  rename('count' = n, 'year' = `year(date)`) 
+
+oregonIPCount <- oregonPrecip %>% 
+  filter(prec == "IP") %>%
+  count(year(date)) %>% 
+  mutate(state = 'oregon', prec = 'IP') %>% 
+  rename('count' = n, 'year' = `year(date)`)
+
+virginaFRCount <- virginiaPrecip %>% 
+  filter(prec == "FZRA") %>%
+  count(year(date)) %>% 
+  mutate(state = 'virgina', prec = 'FZRA') %>% 
+  rename('count' = n, 'year' = `year(date)`) 
+
+virginaIPCount <- virginiaPrecip %>% 
+  filter(prec == "IP") %>%
+  count(year(date)) %>% 
+  mutate(state = 'virgina', prec = 'IP') %>% 
+  rename('count' = n, 'year' = `year(date)`) 
+
+texasFRCount <- texasPrecip %>% 
+  filter(prec == "FZRA") %>%
+  count(year(date)) %>% 
+  mutate(state = 'texas', prec = 'FZRA') %>% 
+  rename('count' = n, 'year' = `year(date)`) 
+
+texasIPCount <- texasPrecip %>% 
+  filter(prec == "IP") %>%
+  count(year(date)) %>% 
+  mutate(state = 'texas', prec = 'IP') %>% 
+  rename('count' = n, 'year' = `year(date)`) 
+
+kansasFRCount <- kansasPrecip %>% 
+  filter(prec == "FZRA") %>%
+  count(year(date)) %>% 
+  mutate(state = 'kansas', prec = 'FZRA') %>% 
+  rename('count' = n, 'year' = `year(date)`) 
+
+kansasIPCount <- kansasPrecip %>% 
+  filter(prec == "IP") %>%
+  count(year(date)) %>% 
+  mutate(state = 'kansas', prec = 'IP') %>% 
+  rename('count' = n, 'year' = `year(date)`) 
+
+nDakotaFRCount <- nDakotaPrecip %>% 
+  filter(prec == "FZRA") %>%
+  count(year(date)) %>% 
+  mutate(state = 'north dakota', prec = 'FZRA') %>% 
+  rename('count' = n, 'year' = `year(date)`) 
+
+nDakotaIPCount <- nDakotaPrecip %>% 
+  filter(prec == "IP") %>%
+  count(year(date)) %>% 
+  mutate(state = 'north dakota', prec = 'FZRA') %>% 
+  rename('count' = n, 'year' = `year(date)`) 
+```
+
+```{r, include = FALSE}
+#join the state dfs into a single df for plotting
+temp1 <- full_join(oregonFRCount, oregonIPCount)
+temp2 <- full_join(virginaFRCount, virginaIPCount)
+temp3 <- full_join(texasFRCount, texasIPCount)
+temp4 <- full_join(kansasFRCount, kansasIPCount)
+temp5 <- full_join(nDakotaFRCount, nDakotaIPCount)
+join1 <- full_join(temp1, temp2)
+join2 <- full_join(temp3, temp4)
+join3 <- full_join(join1, join2)
+precipData <- full_join(join3, temp5)
+```
+
+
+```{r, echo = FALSE, message = FALSE, fig.height=6, fig.width=12}
+
+labels <- c(FZRA = "Freezing Rain", IP = "Ice Pellets")
+
+precipData %>%
+      ggplot(aes(x = year, y = count, color = state)) +
+      theme_dark() +
+      geom_point(aes(year, count)) +
+      geom_line(aes(year, count)) +
+      facet_grid(prec~., labeller=labeller(prec =labels)) + 
+      scale_color_discrete(
+          name = "State",
+          labels = c("Kansas","North Dakota","Oregon", "Texas", "Virginia")
+      ) +
+      labs(
+          x = "Years",
+          y = "Count",
+          title = "Number of observations for each year of both Freezing Rain and Ice Pellets"
+      )
+
+```
+
+
+```{r, include = FALSE, message=FALSE }
+png(file = "Figure2.png", height = 1600, width = 3000)
+
+# for png format only
+precipData %>%
+      ggplot(aes(x = year, y = count, color = state)) +
+      theme_dark(base_size = 40) +
+      geom_point(aes(year, count)) +
+      geom_line(aes(year, count), size = 2) +
+      facet_grid(prec~., labeller=labeller(prec =labels)) + 
+      scale_color_discrete(
+          name = "State",
+          labels = c("Kansas","North Dakota","Oregon", "Texas", "Virginia")
+      ) +
+      labs(
+          x = "Years",
+          y = "Count",
+          title = "Number of observations for each year of both Freezing Rain and Ice Pellets"
+      )
+
+dev.off()
+```
+
+
+```{r, include = FALSE}
+# create a new data temp variable to hold the reduced states
+temp1 <- full_join(oregonPrecip, virginiaPrecip)
+temp2 <- full_join(texasPrecip, kansasPrecip)
+temp3 <- full_join(temp1, temp2)
+new_data_temp <- full_join(temp3, nDakotaPrecip)
+
+station_temp_avg <- aggregate( temp ~ station, new_data_temp, mean )
+as_tibble(station_temp_avg)
+station_temp_avg <- station_temp_avg %>% 
+  rename("avg_temp" = temp)
+
+new_data_temp <- left_join(new_data_temp, station_temp_avg)
+
+#options(tibble.print_max = 50, tibble.print_min = 50)
+print(new_data_temp)
+```
+ 
+ 
+```{r, include = FALSE}
+#create state dataframes that have all the avg temp for plotting
+oregonFRAvg <- oregonPrecip %>% 
+  filter(prec == "FZRA") %>%
+  left_join(new_data_temp) %>% 
+  mutate(state = 'oregon', prec = 'FZRA', date = year(date)) %>% 
+  rename('year' = date) 
+
+oregonIPAvg <- oregonPrecip %>% 
+  filter(prec == "IP") %>%
+  left_join(new_data_temp) %>% 
+  mutate(state = 'oregon', prec = 'IP', date = year(date)) %>% 
+  rename('year' = date) 
+
+virginaFRAvg <- virginiaPrecip %>% 
+  filter(prec == "FZRA") %>%
+  left_join(new_data_temp) %>% 
+  mutate(state = 'virgina', prec = 'FZRA', date = year(date)) %>% 
+  rename('year' = date) 
+
+virginaIPAvg <- virginiaPrecip %>% 
+  filter(prec == "IP") %>%
+  left_join(new_data_temp) %>% 
+  mutate(state = 'virgina', prec = 'IP', date = year(date)) %>% 
+  rename('year' = date) 
+
+texasFRAvg <- texasPrecip %>% 
+  filter(prec == "FZRA") %>%
+  left_join(new_data_temp) %>% 
+  mutate(state = 'texas', prec = 'FZRA', date = year(date)) %>% 
+  rename('year' = date) 
+
+texasIPAvg <- texasPrecip %>% 
+  filter(prec == "IP") %>%
+  left_join(new_data_temp) %>% 
+  mutate(state = 'texas', prec = 'IP', date = year(date)) %>% 
+  rename('year' = date) 
+
+kansasFRAvg <- kansasPrecip %>% 
+  filter(prec == "FZRA") %>%
+  left_join(new_data_temp) %>% 
+  mutate(state = 'kansas', prec = 'FZRA', date = year(date)) %>% 
+  rename('year' = date) 
+
+kansasIPAvg <- kansasPrecip %>% 
+  filter(prec == "IP") %>%
+  left_join(new_data_temp) %>% 
+  mutate(state = 'kansas', prec = 'IP', date = year(date)) %>% 
+  rename('year' = date) 
+
+nDakotaFRAvg <- nDakotaPrecip %>% 
+  filter(prec == "FZRA") %>%
+  left_join(new_data_temp) %>% 
+  mutate(state = 'north dakota', prec = 'FZRA', date = year(date)) %>% 
+  rename('year' = date) 
+
+nDakotaIPAvg <- nDakotaPrecip %>% 
+  filter(prec == "IP") %>%
+  left_join(new_data_temp) %>% 
+  mutate(state = 'north dakota', prec = 'IP', date = year(date)) %>% 
+  rename('year' = date) 
+```
+
+
+```{r, include = FALSE}
+# join the dataframes into one data frame
+temp1 <- full_join(oregonFRAvg, oregonIPAvg)
+temp2 <- full_join(virginaFRAvg, virginaIPAvg)
+temp3 <- full_join(texasFRAvg, texasIPAvg)
+temp4 <- full_join(kansasFRAvg, kansasIPAvg)
+temp5 <- full_join(nDakotaFRAvg, nDakotaIPAvg)
+join1 <- full_join(temp1, temp2)
+join2 <- full_join(temp3, temp4)
+join3 <- full_join(join1, join2)
+precip_avg_data <- full_join(join3, temp5)
+```
+
+
+\newpage
+
+Next, we computed the average number of occurrences of ice pellets and freezing rain through the dataset. We also filtered this computation by the stations and, therefore, by the associated state. This data spans the entirety of the dataset, being from 1996 through 2013 (as seen below in Figure 3).
+
+
+```{r, echo = FALSE, message = FALSE, fig.height=8, fig.width=12}
+
+stateLabels <- c(
+  kansas = "KS",
+  'north dakota' = "ND",
+  oregon = "OR",
+  texas = "TX",
+  virgina  = "VG"
+)
+
+precip_avg_data %>%
+      ggplot(aes(x = year, y = avg_temp, color = state)) +
+      theme_dark() +
+      geom_line(aes(year, avg_temp)) +
+      geom_point(aes(year, avg_temp)) +
+      facet_grid(state~., labeller=labeller(state =stateLabels)) + 
+      scale_color_discrete(
+          name = "State",
+          labels = c("Kansas","North Dakota","Oregon", "Texas", "Virginia")
+      ) +
+      labs(
+          x = "Year",
+          y = "Average Temperature",
+          title = "Average Temperature by Year Per State"
+      )
+
+dev.off()
+
+```
+
+
+```{r, include = FALSE, message = FALSE}
+# for png formatting only
+png(file = "Figure3.png", height = 1280, width = 1300)
+
+precip_avg_data %>%
+      ggplot(aes(x = year, y = avg_temp, color = state)) +
+      theme_dark(base_size = 40) +
+      geom_line(aes(year, avg_temp), size = 1) +
+      geom_point(aes(year, avg_temp), size = 1.75) +
+      facet_grid(state~., labeller=labeller(state =stateLabels)) + 
+      scale_color_discrete(
+          name = "State",
+          labels = c("Kansas","North Dakota","Oregon", "Texas", "Virginia")
+      ) +
+      labs(
+          x = "Year",
+          y = "Average Temperature",
+          title = "Average Temperature by Year Per State"
+      )
+
+dev.off()
+
+```
+
+
+Finally, we computed a random forest classifier for precipitation type. Our method was to use a classifier to help predict the precipitation type, specifically Freezing Rain and Ice Pellets. We decided to use the random forest classifier because we thought it would give better results than other classifiers. We used a multiple regression best-fit line to predict precipitation type. The dependent variable was precipitation type and the independent variables (predictor variables) used to help predict precipitation type was state, the average temperature, and the date.
+
+
+### Random Forest classifier for precipitation type
+```{r, echo = FALSE, message = FALSE}
+### Random Forest classifier for precipitation 
+rf_mod <-rand_forest(mode = "classification") %>%
+      set_engine("ranger") %>%
+      fit(as.factor(prec) ~ state + date + avg_temp, data = new_data_temp)
+
+      predict(rf_mod, new_data_temp) %>%
+      bind_cols(new_data_temp, .) %>%
+      accuracy(as.factor(prec), .pred_class)
+    ```
+
+\newpage
+
+### Results: 
+
+In Figure 2, we discovered that Freezing Rain gave us a better graph visually to see differences between the five states than the Ice Pellet graph. Kansas had a spike in Freezing Rain around the year 2007 with more than 40 occurrences. For Ice Pellets, there were not any recorded observations until the year 1999. Virginia had on average more Ice Pellet observations than any other state. In Figure 3, the graph plotted the Average Temperature (K) for each of the five states over the years. The main result from this graph was that Oregon had a bit more variability to its graph. Texas, Kansas, North Dakota and Virginia had less variability in their graphs. Our last result was our random forest classifier to predict precipitation type with the predictor variables state, average temperature and the year. The classifier resulted in a 92% accuracy in predicting the precipitation type of Freezing Rain and Ice Pellets which was really good to see. 
+
+
+### Discussion: 
+
+While our classifier does not allow us to directly infer the precipitation type based on a given ‘x’ value of time, it does allow us to predict the atmospheric temperature based on the average of the vertical temperature profiles (as shown in figure 3). If there is a correlation between VTP and the precipitation types, one could use the classifier, of 92% accuracy, that we created to identify a later precipitation type. If given more time and more data, this idea could be researched more to determine the accuracy of this hypothesis. Secondarily, we have speculated that adding all 50 states to our classifier would add to its accuracy and overall usefulness.
